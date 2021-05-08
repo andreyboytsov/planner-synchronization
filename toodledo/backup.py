@@ -166,8 +166,8 @@ def get_tokens(config):
 
 def generic_get_and_backup(access_token: str, parameter_name: str,
         default_fields: list, optional_fields: list = [],
-        filename: str = None, readable_table_name: str = None,
-        url_additions: dict={}, start_from=0):
+        filename: str=None, readable_table_name: str=None,
+        url_additions: dict={}, start_from=0, return_json: bool=False):
     result_df = pd.DataFrame(columns=default_fields+optional_fields)
     readable_table_name = \
         readable_table_name if readable_table_name is not None else parameter_name
@@ -206,6 +206,8 @@ def generic_get_and_backup(access_token: str, parameter_name: str,
             logging.warning("Failed to backup %s: %s", readable_table_name, str(e))
     else:
         logging.info("No filename provided. Not saving %s.", readable_table_name)
+    if return_json:
+        return result_df, result_json_parsed
     return result_df
 
 
@@ -251,15 +253,32 @@ def backup_list_details(access_token, list_info, lists_path):
     except Exception as e:
         logging.warning("Failed to backup list %s columns: %s", list_info["id"], str(e))
     #http://api.toodledo.com/3/rows/get.php?access_token=yourtoken&after=1234567890&list=1234567890
-    list_row_df=generic_get_and_backup(
+    list_row_df, row_json =generic_get_and_backup(
         access_token=access_token,
         parameter_name='rows',
         default_fields=LIST_ROW_DEFAULT_FIELDS,
         filename=lists_path+"rows_list_"+str(list_info["id"])+".csv",
-        url_additions={"list": list_info["id"]})
+        url_additions={"list": list_info["id"]},
+        return_json=True)
+    row_ids = list()
+    col_ids = list()
+    values = list()
+    if len(list_row_df) > 0:
+        for i in range(len(row_json)):
+            for j in range(len(row_json[i]["cells"])):
+                if ("c"+str(j+1)) in row_json[i]["cells"]:
+                    values.append(row_json[i]["cells"]["c"+str(j+1)])
+                else:
+                    values.append(None)
+                col_ids.append(list_info["cols"][j]["id"])
+                row_ids.append(row_json[i]["id"])
+        list_cell_df = pd.DataFrame({"value": values, "row_id": row_ids, "column_ids": col_ids})
+    else:
+        list_cell_df = pd.DataFrame({"value": [], "row_id": [], "column_ids": []})
+    list_cell_df["list_id"] = list_info["id"]
     list_row_df["list_id"] = list_info["id"]
     list_col_df["list_id"] = list_info["id"]
-    return list_row_df, list_col_df
+    return list_row_df, list_col_df, list_cell_df
 
 
 def get_and_backup_lists(access_token, backup_path):
@@ -267,6 +286,7 @@ def get_and_backup_lists(access_token, backup_path):
     url = API_URL_PREFIX + "lists" + GET_URL_POSTFIX
     all_list_rows = None
     all_list_cols = None
+    all_list_cells = None
     try:
         # TODO consider parameters: after=1234567890&f=xml
         data = {'access_token': access_token}
@@ -280,7 +300,7 @@ def get_and_backup_lists(access_token, backup_path):
             if type(result_json_parsed) == list:
                 if len(result_json_parsed) > 0:
                     for i in result_json_parsed:
-                        cur_list_rows, cur_list_cols = backup_list_details(access_token, i, lists_path)
+                        cur_list_rows, cur_list_cols, cur_list_cells = backup_list_details(access_token, i, lists_path)
                         if all_list_rows is None:
                             all_list_rows = cur_list_rows
                         else:
@@ -289,6 +309,10 @@ def get_and_backup_lists(access_token, backup_path):
                             all_list_cols = cur_list_cols
                         else:
                             all_list_cols = all_list_cols.append(cur_list_cols, ignore_index=True)
+                        if all_list_cells is None:
+                            all_list_cells = cur_list_cells
+                        else:
+                            all_list_cells = all_list_cells.append(cur_list_cells, ignore_index=True)
                         del i["cols"]
                     result_df = pd.DataFrame(result_json_parsed)
                     logging.info("Read lists successfully")
@@ -320,6 +344,12 @@ def get_and_backup_lists(access_token, backup_path):
         logging.info("Saved all list columns successfully")
     except Exception as e:
         logging.warning("Failed to backup list columns: %s", str(e))
+
+    try:
+        all_list_cells.to_csv(backup_path+'lists_cells.csv', index=False)
+        logging.info("Saved all list cells successfully")
+    except Exception as e:
+        logging.warning("Failed to backup list cells: %s", str(e))
 
     return result_df, all_list_rows, all_list_cols
 
@@ -430,4 +460,7 @@ if __name__=="__main__":
 
     # TODO Subfolders for lists and notes? E.g. by name prefixes
     # TODO Deleted items
-    # TODO All cells of all lists? along with row ID and column ID. Later
+    # TODO All cells of all lists? along with row ID and column ID. Later - in progress
+    # TODO Some tests (at least manual) to be sure? "Back and forth" (save, load, compare)?
+    # TODO Do not refresh tokens right away, make togglable
+    # For each row go through each cell.
