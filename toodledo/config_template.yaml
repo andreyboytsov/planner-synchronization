@@ -1,0 +1,8 @@
+# Path should be absolute or relative to this file's folder
+BACKUP_FOLDER: ../../ToodledoBackups/
+
+# ToodleDo will give those to you once you register the application:
+# http://api.toodledo.com/3/account/doc_register.php
+CLIENT_ID: personalbackuper
+CLIENT_SECRET: my_client_secret
+REDIRECT_URL: https://localhost

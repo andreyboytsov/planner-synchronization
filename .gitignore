@@ -1,3 +1,10 @@
+# This file might contain sensitive data Should not be in git.
+**/config.yaml
+# Personal API tokens
+**/token.txt
+
+# Below: template
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
